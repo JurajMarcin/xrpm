@@ -1,0 +1,231 @@
+#!/bin/env python3
+
+from os import X_OK, access, getenv, makedirs, path
+from pathlib import Path
+from sys import argv, stderr
+from typing import Dict, List, Set
+
+import re
+import shlex
+import subprocess
+
+OUTPUT_REGEX = r"""
+^\s*
+(?P<name>[^ ]+)\s*
+(?P<state>connected|disconnected|unknown\ connection).*[\r\n]+
+(?:^\t(?:
+EDID:\s*(?P<edid>(?:\t{2}[a-z0-9]+[\r\n]+)+) |
+[\w\- ]+:\s*.*[\r\n]+
+(?:\t\tsupported:\s*.*[\r\n]+)?
+(?:\t\trange:\s*.*[\r\n]+)?
+))+
+(?:^(?:\s+\d+x\d+.*)+)?
+"""
+PROFILE_REGEX = r"""
+^(?P<name>[\w-]+)\s+
+(?P<edids>(?:[0-9a-z]+,?)+)\s+
+(?P<args>.*)$
+"""
+
+CONFIG_PATH = getenv("XRPM_CONFIG",
+                     str(Path.home().joinpath("./.xrpm/profiles")))
+AFTER_PATH = getenv("XRPM_AFTER", str(Path.home().joinpath("./.xrpm/after")))
+USAGE = f"""Usage: '{argv[0]} [ACTION [ACTION ARGS...]]'
+Try '{argv[0]} help' for more information"""
+HELP = f"""NAME
+    xrpm - XRandr Profile Manager
+
+SYNOPSIS
+    {argv[0]}
+    {argv[0]} [ACTION [ACTION ARGS...]]
+
+ACTIONS
+    status
+        show saved and detected profiles (default)
+    save NAME XRANDR_ARGS...
+        create a new profile for connected monitors
+    delete NAME
+        delete the profile NAME
+    set NAME
+        load profile NAME and execute after script
+    auto
+        load the first detected profile and execute after script
+    help
+        show this help
+
+AUTHOR
+    Juraj Marcin <juraj@jurajmarcin.com>"""
+
+
+class Output:
+    def __init__(self, name: str, connected: bool, edid: str):
+        self.name = name
+        self.connected = connected
+        self.edid = edid
+
+    def __str__(self) -> str:
+        if self.connected:
+            return f"Output {self.name} connected to {self.edid}"
+        return f"Output {self.name} disconnected"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    @staticmethod
+    def parse_outputs(text: str) -> List["Output"]:
+        outputs: List[Output] = []
+        matches = re.finditer(OUTPUT_REGEX, text, re.MULTILINE | re.VERBOSE)
+        for match in matches:
+            name, state, edid = match.group("name", "state", "edid")
+            connected = state == "connected"
+            if connected and not edid:
+                print(f"Output {name} is connected, but EDID is unknown",
+                      file=stderr)
+            edid = re.sub(r"\s", "", edid) if edid else ""
+            outputs.append(Output(name, connected, edid))
+        return outputs
+
+    @staticmethod
+    def load_outputs() -> List["Output"]:
+        p = subprocess.run(["xrandr", "--properties"], stdout=subprocess.PIPE,
+                           text=True, check=True)
+        return Output.parse_outputs(str(p.stdout))
+
+    @staticmethod
+    def connected_edids(outputs: List["Output"]) -> Set[str]:
+        return set(map(lambda o: o.edid,
+                       filter(lambda o: o.connected and o.edid,
+                              outputs)))
+
+
+class Profile:
+    def __init__(self, name: str, edids: Set[str], args: List[str]):
+        self.name = name
+        self.edids = edids
+        self.args = args
+
+    def set_profile(self) -> None:
+        print(f"Setting profile {self.name}")
+        subprocess.run(["xrandr"] + self.args, check=True)
+        if access(AFTER_PATH, X_OK):
+            print("Running after scripts")
+            subprocess.run([AFTER_PATH])
+
+    def is_detected(self, outputs: List[Output]) -> bool:
+        return Output.connected_edids(outputs) == self.edids
+
+    def serialize(self) -> str:
+        return f"{self.name} {','.join(self.edids)} {shlex.join(self.args)}\n"
+
+    def __str__(self) -> str:
+        return f"Profile {self.name}"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    @staticmethod
+    def parse_profile(text: str) -> "Profile":
+        match = re.match(PROFILE_REGEX, text.strip(), re.VERBOSE)
+        if match is None:
+            raise ValueError(f"Invalid profile '{text.strip()}'")
+        return Profile(match.group("name"),
+                       set(match.group("edids").split(",")),
+                       shlex.split(match.group("args")))
+
+    @staticmethod
+    def load_profiles() -> Dict[str, "Profile"]:
+        profiles: Dict[str, Profile] = {}
+        try:
+            with open(CONFIG_PATH, "r") as config_file:
+                for line in config_file:
+                    profile = Profile.parse_profile(line)
+                    profiles[profile.name] = profile
+        except FileNotFoundError:
+            print(f"{CONFIG_PATH}: Config file does not exist", file=stderr)
+        return profiles
+
+    @staticmethod
+    def save_profiles(profiles: Dict[str, "Profile"]) -> None:
+        makedirs(path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w") as config_file:
+            for profile in profiles.values():
+                config_file.write(profile.serialize())
+
+
+def print_usage() -> None:
+    print(USAGE)
+
+
+def print_help() -> None:
+    print(HELP)
+
+
+def print_status() -> None:
+    outputs = Output.load_outputs()
+    profiles = Profile.load_profiles()
+    for profile in profiles.values():
+        print(profile.name,
+              "(detected)" if profile.is_detected(outputs) else "")
+
+
+def save_profile(name: str, args: List[str]) -> None:
+    outputs = Output.load_outputs()
+    profiles = Profile.load_profiles()
+    if re.match(r"^[\w-]+$", name) is None:
+        raise ValueError("Invalid profile name")
+    if not args:
+        raise ValueError("XRandr arguments are required")
+    profiles[name] = Profile(name, Output.connected_edids(outputs), args)
+    Profile.save_profiles(profiles)
+    print(f"Profile {name} saved")
+
+
+def delete_profile(name: str) -> None:
+    profiles = Profile.load_profiles()
+    del profiles[name]
+    Profile.save_profiles(profiles)
+    print(f"Profile {name} deleted")
+
+
+def set_profile(name: str) -> None:
+    profiles = Profile.load_profiles()
+    profiles[name].set_profile()
+
+
+def profile_auto() -> None:
+    outputs = Output.load_outputs()
+    profiles = Profile.load_profiles()
+    for profile in profiles.values():
+        if profile.is_detected(outputs):
+            profile.set_profile()
+            return
+    print("No profile detected")
+
+
+if __name__ == "__main__":
+    try:
+        if len(argv) == 1 or len(argv) == 2 and argv[1] == "status":
+            print_status()
+        elif len(argv) == 2 and argv[1] == "help":
+            print_help()
+        elif len(argv) >= 4 and argv[1] == "save":
+            save_profile(argv[2], argv[3:])
+        elif len(argv) == 3 and argv[1] == "delete":
+            delete_profile(argv[2])
+        elif len(argv) == 3 and argv[1] == "set":
+            set_profile(argv[2])
+        elif len(argv) == 2 and argv[1] == "auto":
+            profile_auto()
+        else:
+            print_usage()
+            exit(1)
+        exit(0)
+    except OSError as e:
+        if e.filename:
+            print(f"{e.filename}: ", end="", file=stderr)
+        print(e.strerror, file=stderr)
+    except ValueError as e:
+        print(str(e), file=stderr)
+    except KeyError as e:
+        print(f"Profile {e} not found", file=stderr)
+    exit(1)
