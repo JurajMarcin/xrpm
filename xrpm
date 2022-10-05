@@ -2,6 +2,7 @@
 
 from os import X_OK, access, getenv, makedirs, path
 from pathlib import Path
+from pyedid import Optional, parse_edid
 from sys import argv, stderr
 from typing import Dict, List, Set
 
@@ -22,7 +23,8 @@ EDID:\s*(?P<edid>(?:\t{2}[a-z0-9]+[\r\n]+)+) |
 (?:^(?:\s+\d+x\d+.*)+)?
 """
 PROFILE_REGEX = r"""
-^(?P<name>[\w-]+)\s+
+^(?:(?P<type>name|serial)\s+)?
+(?P<name>[\w-]+)\s+
 (?P<edids>(?:[0-9a-z]+,?)+)\s+
 (?P<args>.*)$
 """
@@ -42,8 +44,9 @@ SYNOPSIS
 ACTIONS
     status
         show saved and detected profiles (default)
-    save NAME XRANDR_ARGS...
-        create a new profile for connected monitors
+    save [--serial] NAME XRANDR_ARGS...
+        create a new profile for connected monitors (matches monitor name by
+        default, use option `--serial` to match monitor serial numbers)
     delete NAME
         delete the profile NAME
     set NAME
@@ -94,15 +97,36 @@ class Output:
     @staticmethod
     def connected_edids(outputs: List["Output"]) -> Set[str]:
         return set(map(lambda o: o.edid,
-                       filter(lambda o: o.connected and o.edid,
-                              outputs)))
+                       filter(lambda o: o.connected and o.edid, outputs)))
+    @staticmethod
+    def connected_names(outputs: List["Output"]) -> Set[str | int | None]:
+        return set(map(lambda e: e.name if e.name else e.serial,
+                       map(lambda o: parse_edid(o.edid),
+                           filter(lambda o: o.connected and o.edid, outputs))))
+
+    @staticmethod
+    def connected_serials(outputs: List["Output"]) -> Set[str | int]:
+        return set(map(lambda o: parse_edid(o.edid).serial,
+                       filter(lambda o: o.connected and o.edid, outputs)))
 
 
 class Profile:
-    def __init__(self, name: str, edids: Set[str], args: List[str]):
+    TYPE_NAME = 'name'
+    TYPE_SERIAL = 'serial'
+
+    def __init__(self, type: str, name: str, edids: Set[str],
+                 args: List[str]):
+        self.type = type
         self.name = name
         self.edids = edids
         self.args = args
+
+    def output_names(self) -> Set[str | int | None]:
+        return set(map(lambda e: e.name if e.name else e.serial,
+                       map(parse_edid, self.edids)))
+
+    def output_serials(self) -> Set[str | int]:
+        return set(map(lambda e: parse_edid(e).serial, self.edids))
 
     def set_profile(self) -> None:
         print(f"Setting profile {self.name}")
@@ -111,11 +135,18 @@ class Profile:
             print("Running after scripts")
             subprocess.run([AFTER_PATH])
 
-    def is_detected(self, outputs: List[Output]) -> bool:
-        return Output.connected_edids(outputs) == self.edids
+    def is_detected(self, outputs: List[Output]) -> Optional[str]:
+        if self.type == Profile.TYPE_NAME \
+                and Output.connected_names(outputs) == self.output_names():
+            return Profile.TYPE_NAME
+        if self.type == Profile.TYPE_SERIAL \
+                and Output.connected_serials(outputs) == self.output_serials():
+            return Profile.TYPE_SERIAL
+        return None
 
     def serialize(self) -> str:
-        return f"{self.name} {','.join(self.edids)} {shlex.join(self.args)}\n"
+        return f"{self.name} {','.join(self.edids)} " \
+            + f"{shlex.join(self.args)}\n"
 
     def __str__(self) -> str:
         return f"Profile {self.name}"
@@ -128,7 +159,9 @@ class Profile:
         match = re.match(PROFILE_REGEX, text.strip(), re.VERBOSE)
         if match is None:
             raise ValueError(f"Invalid profile '{text.strip()}'")
-        return Profile(match.group("name"),
+        return Profile(match.group("type") if match.group("type")
+                       else Profile.TYPE_NAME,
+                       match.group("name"),
                        set(match.group("edids").split(",")),
                        shlex.split(match.group("args")))
 
@@ -164,18 +197,26 @@ def print_status() -> None:
     outputs = Output.load_outputs()
     profiles = Profile.load_profiles()
     for profile in profiles.values():
+        type = profile.is_detected(outputs)
         print(profile.name,
-              "(detected)" if profile.is_detected(outputs) else "")
+              ", ".join(map(lambda e: f"{e.name}[{e.serial}]",
+                            map(parse_edid, profile.edids))),
+              f"(detected {type})" if type else "")
 
 
-def save_profile(name: str, args: List[str]) -> None:
+def save_profile(type: str, name: str, args: List[str]) -> None:
     outputs = Output.load_outputs()
     profiles = Profile.load_profiles()
     if re.match(r"^[\w-]+$", name) is None:
         raise ValueError("Invalid profile name")
     if not args:
         raise ValueError("XRandr arguments are required")
-    profiles[name] = Profile(name, Output.connected_edids(outputs), args)
+    if type not in {Profile.TYPE_NAME, Profile.TYPE_SERIAL}:
+        raise ValueError("Invalid type")
+    if type == Profile.TYPE_NAME and None in Output.connected_names(outputs):
+        print("Some outputs have no assigned name, using serial for those",
+              file=stderr)
+    profiles[name] = Profile(type, name, Output.connected_edids(outputs), args)
     Profile.save_profiles(profiles)
     print(f"Profile {name} saved")
 
@@ -209,7 +250,15 @@ if __name__ == "__main__":
         elif len(argv) == 2 and argv[1] == "help":
             print_help()
         elif len(argv) >= 4 and argv[1] == "save":
-            save_profile(argv[2], argv[3:])
+            if argv[2] == "--serial":
+                name = argv[3]
+                type = Profile.TYPE_SERIAL
+                rest = argv[4:]
+            else:
+                name = argv[2]
+                type = Profile.TYPE_NAME
+                rest = argv[3:]
+            save_profile(type, name, rest)
         elif len(argv) == 3 and argv[1] == "delete":
             delete_profile(argv[2])
         elif len(argv) == 3 and argv[1] == "set":

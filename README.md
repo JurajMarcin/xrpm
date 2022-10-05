@@ -16,9 +16,9 @@ xrpm [ACTION [ACTION_ARGS...]]
 
 - show saved and detected profiles (default)
 
-**save NAME XRANDR_ARGS...**
+**save [--serial] NAME XRANDR_ARGS...**
 
-- create a new profile for connected monitors
+- create a new profile for connected monitors (matches monitor name by default, use option `--serial` to match monitor serial numbers)
 
 **delete NAME**
 
