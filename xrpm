@@ -128,9 +128,12 @@ class Profile:
     def output_serials(self) -> Set[str | int]:
         return set(map(lambda e: parse_edid(e).serial, self.edids))
 
-    def set_profile(self) -> None:
+    def set_profile(self, outputs: List[Output]) -> None:
         print(f"Setting profile {self.name}")
-        subprocess.run(["xrandr"] + self.args, check=True)
+        subprocess.run(["xrandr"] + self.args
+                       + [ x for output in outputs if not output.connected
+                          for x in ["--output", output.name, "--off"]],
+                       check=True)
         if access(AFTER_PATH, X_OK):
             print("Running after scripts")
             subprocess.run([AFTER_PATH])
@@ -230,7 +233,7 @@ def delete_profile(name: str) -> None:
 
 def set_profile(name: str) -> None:
     profiles = Profile.load_profiles()
-    profiles[name].set_profile()
+    profiles[name].set_profile(Output.load_outputs())
 
 
 def profile_auto() -> None:
@@ -238,7 +241,7 @@ def profile_auto() -> None:
     profiles = Profile.load_profiles()
     for profile in profiles.values():
         if profile.is_detected(outputs):
-            profile.set_profile()
+            profile.set_profile(outputs)
             return
     print("No profile detected")
 
