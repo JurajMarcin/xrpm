@@ -52,7 +52,8 @@ ACTIONS
     set NAME
         load profile NAME and execute after script
     auto
-        load the first detected profile and execute after script
+        load the first detected profile or xrandr --auto if no profile is
+        detected and execute after script
     help
         show this help
 
@@ -187,6 +188,10 @@ class Profile:
             for profile in profiles.values():
                 config_file.write(profile.serialize())
 
+    @staticmethod
+    def auto() -> "Profile":
+        return Profile(Profile.TYPE_NAME, "auto", set(), ["--auto"])
+
 
 def print_usage() -> None:
     print(USAGE)
@@ -243,7 +248,8 @@ def profile_auto() -> None:
         if profile.is_detected(outputs):
             profile.set_profile(outputs)
             return
-    print("No profile detected")
+    print("No profile detected, running 'xrandr --auto'")
+    Profile.auto().set_profile([])
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ xrpm [ACTION [ACTION_ARGS...]]
 
 **auto**
 
-- load the first detected profile and execute after script
+- load the first detected profile or xrandr --auto if no profile is detected and execute after script
 
 ## Files
 
