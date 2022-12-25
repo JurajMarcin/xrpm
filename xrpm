@@ -29,6 +29,7 @@ PROFILE_REGEX = r"""
 (?P<args>.*)$
 """
 
+DRY_RUN = getenv("XRPM_DRYRUN", "") != ""
 CONFIG_PATH = getenv("XRPM_CONFIG",
                      str(Path.home().joinpath("./.xrpm/profiles")))
 AFTER_PATH = getenv("XRPM_AFTER", str(Path.home().joinpath("./.xrpm/after")))
@@ -59,6 +60,13 @@ ACTIONS
 
 AUTHOR
     Juraj Marcin <juraj@jurajmarcin.com>"""
+
+
+def run_command(argv: List[str]) -> None:
+    if DRY_RUN:
+        print(" ".join(argv))
+    else:
+        subprocess.run(argv, check=True)
 
 
 class Output:
@@ -131,13 +139,12 @@ class Profile:
 
     def set_profile(self, outputs: List[Output]) -> None:
         print(f"Setting profile {self.name}")
-        subprocess.run(["xrandr"] + self.args
-                       + [ x for output in outputs if not output.connected
-                          for x in ["--output", output.name, "--off"]],
-                       check=True)
+        run_command(["xrandr"] + self.args
+                    + [ x for output in outputs if not output.connected
+                       for x in ["--output", output.name, "--off"]])
         if access(AFTER_PATH, X_OK):
             print("Running after scripts")
-            subprocess.run([AFTER_PATH])
+            run_command([AFTER_PATH])
 
     def is_detected(self, outputs: List[Output]) -> Optional[str]:
         if self.type == Profile.TYPE_NAME \
