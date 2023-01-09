@@ -52,6 +52,8 @@ ACTIONS
         delete the profile NAME
     set NAME
         load profile NAME and execute after script
+    copy [--serial] SRC_NAME DST_NAME
+        copy XRandR args from a profile NAME and save it as COPY_NAME
     auto
         load the first detected profile or xrandr --auto if no profile is
         detected and execute after script
@@ -248,6 +250,13 @@ def set_profile(name: str) -> None:
     profiles[name].set_profile(Output.load_outputs())
 
 
+def copy_profile(type: str, src_name: str, dst_name: str) -> None:
+    profiles = Profile.load_profiles()
+    if src_name not in profiles:
+        raise ValueError("Src name not found")
+    save_profile(type, dst_name, profiles[src_name].args)
+
+
 def profile_auto() -> None:
     outputs = Output.load_outputs()
     profiles = Profile.load_profiles()
@@ -279,6 +288,11 @@ if __name__ == "__main__":
             delete_profile(argv[2])
         elif len(argv) == 3 and argv[1] == "set":
             set_profile(argv[2])
+        elif len(argv) >= 4 and argv[1] == "copy":
+            if argv[2] == "--serial":
+                copy_profile(Profile.TYPE_SERIAL, argv[3], argv[4])
+            else:
+                copy_profile(Profile.TYPE_NAME, argv[2], argv[3])
         elif len(argv) == 2 and argv[1] == "auto":
             profile_auto()
         else:
