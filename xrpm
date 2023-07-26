@@ -142,7 +142,7 @@ class Profile:
     def set_profile(self, outputs: List[Output]) -> None:
         print(f"Setting profile {self.name}")
         run_command(["xrandr"] + self.args
-                    + [ x for output in outputs if not output.connected
+                    + [ x for output in outputs if output.name not in self.args
                        for x in ["--output", output.name, "--off"]])
         if access(AFTER_PATH, X_OK):
             print("Running after scripts")
