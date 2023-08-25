@@ -1,42 +1,49 @@
 # XRPM - XRandr Profile Manager
 
-Simple Python script to manage your XRandr configurations for different sets of
+(Once) Simple Python script to manage your XRandr configurations for different sets of
 monitors.
 
 ## Usage
 
 ```bash
-xrpm
-xrpm [ACTION [ACTION_ARGS...]]
+xrpm [GLOBAL OPTIONS] [ACTION [ACTION OPTIONS] [ACTION ARGS...]]
 ```
 
-### Actions
+More detailed help can be displayed with:
+```bash
+xrpm --help
+```
 
-**status**
+or for subcommand:
+```bash
+xrpm subcommand --help
+```
 
-- show saved and detected profiles (default)
+### Example
 
-**save [--serial] NAME XRANDR_ARGS...**
+Show saved profiles, `+` marks detected profiles.
 
-- create a new profile for connected monitors (matches monitor name by default, use option `--serial` to match monitor serial numbers)
+```bash
+xrpm status
+```
 
-**delete NAME**
+Set detected profile. If multiple are detected, the first one is set.
 
-- delete the profile NAME
+```bash
+xrpm set
+```
 
-**set NAME**
+Create a new profile with 2 monitors, stacked vertically, center aligned with different resolutions and modes.
 
-- load profile NAME and execute after script
-
-**auto**
-
-- load the first detected profile or xrandr --auto if no profile is detected and execute after script
+```bash
+xrpm save test_profile --output eDP-1 --auto --pos 760x1440 --output DP-1 --mode 2560x1440 --rate 165 --pos 0x0
+```
 
 ## Files
 
-By default xrpm stores saved profiles in `$HOME/.xrpm/profiles` and loads after
+By default xrpm stores saved profiles in `$HOME/.xrpm/profiles.json` and loads after
 script from `$HOME/.xrpm/after` (no script is executed, if it does not exists or
 is not set as executable).
 
 These paths can be altered by setting `XRPM_CONFIG` or `XRPM_AFTER` environment
-variables respectively.
+variables respectively or using command line options
