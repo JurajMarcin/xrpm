@@ -1,59 +1,68 @@
-from os import getenv
+from argparse import ArgumentParser, Namespace, REMAINDER
+from os import X_OK, access, getenv
 from pathlib import Path
-from argparse import REMAINDER, ArgumentParser, Namespace
+import re
+import shlex
 from sys import stderr
 
-from xrpm.data import Output, Profile, Profiles
-from xrpm.utils import detect_profile, profile_args, run_xrandr
+from xrpm.data import Display, Output, Profile, Profiles
+from xrpm.utils import detect_profile, profile_args, run_command, run_xrandr
 
 
-arg = ArgumentParser(prog="xrpm", description="XRandr Profile Manager")
-arg.add_argument(
-    "-n", "--dry-run",
+args_parser = ArgumentParser(prog="xrpm", description="XRandr Profile Manager")
+args_parser.add_argument(
+    "-n",
+    "--dry-run",
     action="store_true",
     help="do not run any XRandr commands, only print them",
 )
-arg.add_argument(
-    "-c", "--config",
+args_parser.add_argument(
+    "-c",
+    "--config",
     action="store",
-    default=getenv("XRPM_CONFIG",
-                   str(Path.home().joinpath("./.xrpm/profiles.json"))),
+    default=getenv(
+        "XRPM_CONFIG", str(Path.home().joinpath("./.xrpm/profiles.json"))
+    ),
     help="load saved profiles from file (can be changed with XRPM_CONFIG "
-         "environment variable)",
+    "environment variable)",
 )
-arg.add_argument(
-    "-p", "--post-run",
+args_parser.add_argument(
+    "-p",
+    "--post-set",
     action="store",
-    default=getenv("XRPM_AFTER", str(Path.home().joinpath("./.xrpm/after"))),
+    default=getenv("XRPM_POST", str(Path.home().joinpath("./.xrpm/post"))),
     help="script to run after setting profile (can be changes with "
-         "XRPM_POST_RUN environment variable)",
+    "XRPM_POST environment variable)",
 )
-arg.add_argument("--debug", action="store_true")
+args_parser.add_argument("--debug", action="store_true")
 
 
-def cmd_status(profiles: Profiles, outputs: list[Output], _: Namespace) \
-        -> None:
+def cmd_status(
+    profiles: Profiles, outputs: list[Output], _: Namespace
+) -> None:
     detected = detect_profile(profiles, outputs)
     for name, profile in profiles.items():
         detected_mark = "*" if detected == name else " "
         print(f"{detected_mark} {name} {profile}")
 
 
-arg.set_defaults(exec=cmd_status)
-cmd = arg.add_subparsers()
-status_arg = cmd.add_parser("status")
-status_arg.set_defaults(exec=cmd_status)
+args_parser.set_defaults(exec=cmd_status)
+cmd_parser = args_parser.add_subparsers()
+status_args_parser = cmd_parser.add_parser("status")
+status_args_parser.set_defaults(exec=cmd_status)
 
 
-def cmd_save(profiles: Profiles, outputs: list[Output], args: Namespace) \
-        -> None:
+def cmd_save(
+    profiles: Profiles, outputs: list[Output], args: Namespace
+) -> None:
     new_profile = Profile(
-        serial=args.serial == True,
-        match_outputs=args.match_outputs == True,
+        serial=args.serial is True,
+        match_outputs=args.match_outputs is True,
         global_args=[],
         displays={
             output.name: output.display
-            for output in outputs if output.connected
+            for output in outputs
+            if output.connected
         },
     )
     arg_output = False
@@ -74,33 +83,36 @@ def cmd_save(profiles: Profiles, outputs: list[Output], args: Namespace) \
     print(f"Created profile {args.name} {new_profile}")
 
 
-save_arg = cmd.add_parser("save")
-save_arg.add_argument(
+save_args_parser = cmd_parser.add_parser("save")
+save_args_parser.add_argument(
     "name",
     action="store",
     help="name of the profile",
 )
-save_arg.add_argument(
+save_args_parser.add_argument(
     "xrandr_args",
     action="store",
     help="XRandr arguments",
     nargs=REMAINDER,
 )
-save_arg.add_argument(
-    "-s", "--serial",
-    
+save_args_parser.add_argument(
+    "-s",
+    "--serial",
     action="store_true",
     help="match by serial number, not name of the monitor",
 )
-save_arg.add_argument(
-    "-o", "--match-outputs",
+save_args_parser.add_argument(
+    "-o",
+    "--match-outputs",
     action="store_true",
     help="also match same outputs as current ones",
 )
-save_arg.set_defaults(exec=cmd_save)
+save_args_parser.set_defaults(exec=cmd_save)
 
 
-def cmd_set(profiles: Profiles, outputs: list[Output], args: Namespace) -> None:
+def cmd_set(
+    profiles: Profiles, outputs: list[Output], args: Namespace
+) -> None:
     if not args.name:
         name = detect_profile(profiles, outputs)
     elif args.name not in profiles:
@@ -115,15 +127,11 @@ def cmd_set(profiles: Profiles, outputs: list[Output], args: Namespace) -> None:
         run_xrandr(["--auto"], args.dry_run)
 
 
-set_arg = cmd.add_parser("set")
-set_arg.add_argument(
-    "name",
-    action="store",
-    help="name of the profile",
-    default="",
-    nargs="?"
+set_args_parser = cmd_parser.add_parser("set")
+set_args_parser.add_argument(
+    "name", action="store", help="name of the profile", default="", nargs="?"
 )
-set_arg.set_defaults(exec=cmd_set)
+set_args_parser.set_defaults(exec=cmd_set)
 
 
 def cmd_delete(profiles: Profiles, _: list[Output], args: Namespace) -> None:
@@ -133,17 +141,17 @@ def cmd_delete(profiles: Profiles, _: list[Output], args: Namespace) -> None:
     print(f"Deleted profile {args.name} {profile}")
 
 
-delete_arg = cmd.add_parser("delete")
-delete_arg.add_argument(
+delete_args_parser = cmd_parser.add_parser("delete")
+delete_args_parser.add_argument(
     "name",
     action="store",
     help="name of the profile",
 )
-delete_arg.set_defaults(exec=cmd_delete)
+delete_args_parser.set_defaults(exec=cmd_delete)
 
 
 def parse_args() -> Namespace:
-    return arg.parse_args()
+    return args_parser.parse_args()
 
 
 __all__ = [
