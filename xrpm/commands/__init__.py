@@ -153,6 +153,74 @@ delete_args_parser.add_argument(
 delete_args_parser.set_defaults(exec=cmd_delete)
 
 
+OLD_PROFILE_RE = r"""
+^(?:(?P<type>name|serial)\s+)?
+(?P<name>[\w-]+)\s+
+(?P<edids>(?:[0-9a-z]+,?)+)\s+
+(?P<args>.*)$
+"""
+
+
+def cmd_convert(profiles: Profiles, _: list[Output], args: Namespace) -> None:
+    with open(args.old_config, "r") as old_config:
+        for line in old_config:
+            match = re.match(OLD_PROFILE_RE, line.strip(), re.VERBOSE)
+            if match is None:
+                print(
+                    f"Skipping invalid profile '{line.strip()}'", file=stderr
+                )
+                continue
+            name = match.group("name")
+            print(f"Converting profile {name}")
+            xrandr_args = shlex.split(match.group("args"))
+            displays = {
+                str(i): Display(edid=edid)
+                for i, edid in enumerate(
+                    set(match.group("edids").split(",")), start=1
+                )
+            }
+            outputs: list[Output] = []
+            for i in range(1, len(xrandr_args)):
+                if xrandr_args[i - 1] != "--output":
+                    continue
+                for selection, display in displays.items():
+                    print(f"{selection}: {display}")
+                output = xrandr_args[i]
+                while (
+                    key := input(f"Choose display for output {output}: ")
+                ) not in displays:
+                    pass
+                outputs.append(
+                    Output(
+                        name=output, connected=True, display=displays.pop(key)
+                    )
+                )
+            cmd_save(
+                profiles,
+                outputs,
+                Namespace(
+                    serial=match.group("type") == "serial",
+                    match_outputs=False,
+                    xrandr_args=xrandr_args,
+                    name=name,
+                    dry_run=args.dry_run,
+                    config=args.config,
+                    post_set=args.post_set,
+                ),
+            )
+
+
+convert_args_parser = cmd_parser.add_parser("convert")
+convert_args_parser.add_argument(
+    "old_config",
+    action="store",
+    help="old config path",
+    default=str(Path.home().joinpath("./.xrpm/profiles")),
+    nargs="?",
+)
+convert_args_parser.set_defaults(exec=cmd_convert)
+
+
 def parse_args() -> Namespace:
     return args_parser.parse_args()
 
