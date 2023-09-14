@@ -4,6 +4,8 @@ description = "XRandr Profile Manager"
 version = "2.0.0"
 requires-python = ">=3.11"
 dependencies = [
+    "pyedid ~= 1.0.3",
+    "pydantic ~= 1.10.2",
 ]
 
 [project.scripts]
@@ -18,3 +20,15 @@ packages = [
     "xrpm",
     "xrpm.commands",
 ]
+
+[tool.pyright]
+reportMissingImports = true
+reportMissingTypeStubs = true
+typeCheckingMode = "strict"
+reportMissingModuleSource = false
+
+[tool.black]
+line-length = 79
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = "missing-class-docstring,missing-function-docstring,missing-module-docstring,too-few-public-methods,unspecified-encoding"
