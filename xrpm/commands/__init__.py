@@ -125,6 +125,9 @@ def cmd_set(
     else:
         print("No profile detected, using auto profile")
         run_xrandr(["--auto"], args.dry_run)
+    if access(args.post_set, X_OK):
+        print("Running post set scripts")
+        run_command([args.post_set], args.dry_run)
 
 
 set_args_parser = cmd_parser.add_parser("set")
