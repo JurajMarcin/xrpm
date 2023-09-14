@@ -9,8 +9,15 @@ def main() -> int:
     try:
         profiles = Profile.load(args.config)
         outputs = Output.load_outputs()
+        if args.debug:
+            print(args)
         args.exec(profiles, outputs, args)
-        Profile.save(profiles, args.config)
+        if args.dry_run:
+            print(f"Would save profiles to {args.config}:")
+            for name, profile in profiles.items():
+                print(f"{name}: {profile.pretty_print()}")
+        else:
+            Profile.save(profiles, args.config)
         return 0
     # pylint: disable=broad-exception-caught
     except Exception as ex:

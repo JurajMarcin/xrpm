@@ -99,6 +99,18 @@ class Profile(BaseModel):
             displays = displays.values()
         return ", ".join(displays)
 
+    def pretty_print(self) -> str:
+        displays = "\n\t".join(
+            [
+                f"{output}: {display} ({display.args})"
+                for output, display in self.displays.items()
+            ]
+        )
+        return (
+            f"{self.serial=}, {self.match_outputs=}, {self.global_args=}\n"
+            f"\t{displays}"
+        )
+
     @staticmethod
     def load(path: str) -> Profiles:
         try:
