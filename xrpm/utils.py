@@ -71,8 +71,8 @@ def _find_output(outputs: list[Output], display: Display) -> Output:
 
 def profile_args(profile: Profile, outputs: list[Output]) -> list[str]:
     args = list(profile.global_args)
-    enabled: set[str] = set()
-    for display in profile.displays.values():
+    output_map: dict[str, str] = {}
+    for orig_output, display in profile.displays.items():
         try:
             output = _find_output(outputs, display)
         except StopIteration:
@@ -80,9 +80,12 @@ def profile_args(profile: Profile, outputs: list[Output]) -> list[str]:
             raise RuntimeError(f"Monitor {display} not connected")
         args.extend(("--output", output.name))
         args.extend(display.args)
-        enabled.add(output.name)
+        output_map[orig_output] = output.name
+    for i in range(len(args)):
+        if args[i] in output_map:
+            args[i] = output_map[args[i]]
     for output in outputs:
-        if output.name not in enabled:
+        if output.name not in output_map.values():
             args.extend(("--output", output.name, "--off"))
     return args
 
