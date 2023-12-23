@@ -2,14 +2,22 @@ from argparse import ArgumentParser, Namespace
 from os import X_OK, access
 
 from xrpm.data import Output, Profiles
-from xrpm.utils import detect_profile, profile_args, run_command, run_xrandr
+from xrpm.utils import detect_profiles, profile_args, run_command, run_xrandr
+
+
+def _auto_profile(profiles: Profiles, outputs: list[Output]) -> str | None:
+    detected = detect_profiles(profiles, outputs)
+    sorted_detected = sorted(
+        detected.items(), key=lambda kv: (not kv[1], kv[0])
+    )
+    return sorted_detected[0][0] if sorted_detected else None
 
 
 def cmd_set(
     profiles: Profiles, outputs: list[Output], args: Namespace
 ) -> None:
     if not args.name:
-        name = detect_profile(profiles, outputs)
+        name = _auto_profile(profiles, outputs)
     elif args.name not in profiles:
         raise ValueError(f"Profile {args.name} not found")
     else:

@@ -15,40 +15,39 @@ def run_xrandr(argv: list[str], dry_run: bool = False) -> None:
     run_command(["xrandr"] + argv, dry_run)
 
 
-def _profile_display_set(profile: Profile) -> set[tuple[str, str] | str]:
-    display_dict = {
+def _profile_displays(profile: Profile) -> dict[str, str]:
+    return {
         output: display.serial() if profile.serial else display.name()
         for output, display in profile.displays.items()
     }
-    return set(
-        display_dict.items()
-        if profile.match_outputs
-        else display_dict.values()
-    )
 
 
-def _outputs_display_set(
+def _outputs_displays(
     profile: Profile, outputs: list[Output]
-) -> set[tuple[str, str] | str]:
-    output_dict = {
+) -> dict[str, str]:
+    return {
         output.name: output.display.serial()
         if profile.serial
         else output.display.name()
         for output in outputs
         if output.connected
     }
-    return set(
-        output_dict.items() if profile.match_outputs else output_dict.values()
-    )
 
 
-def detect_profile(profiles: Profiles, outputs: list[Output]) -> str | None:
+def detect_profiles(
+    profiles: Profiles, outputs: list[Output]
+) -> dict[str, bool]:
+    detected: dict[str, bool] = {}
     for name, profile in profiles.items():
-        if _profile_display_set(profile) == _outputs_display_set(
-            profile, outputs
-        ):
-            return name
-    return None
+        profile_displays = _profile_displays(profile)
+        outputs_displays = _outputs_displays(profile, outputs)
+        if profile_displays == outputs_displays:
+            detected[name] = True
+        elif not profile.match_outputs and set(
+            profile_displays.values()
+        ) == set(outputs_displays.values()):
+            detected[name] = False
+    return detected
 
 
 def _find_output(outputs: list[Output], display: Display) -> Output:
@@ -93,6 +92,6 @@ def profile_args(profile: Profile, outputs: list[Output]) -> list[str]:
 __all__ = [
     "run_command",
     "run_xrandr",
-    "detect_profile",
+    "detect_profiles",
     "profile_args",
 ]
