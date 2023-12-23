@@ -72,6 +72,8 @@ def profile_args(profile: Profile, outputs: list[Output]) -> list[str]:
     args = list(profile.global_args)
     output_map: dict[str, str] = {}
     for orig_output, display in profile.displays.items():
+        if not display.args:
+            continue
         try:
             output = _find_output(outputs, display)
         except StopIteration:
